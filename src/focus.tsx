@@ -1,70 +1,28 @@
 import {
   createContext,
+  createEffect,
+  createMemo,
   createSignal,
   onCleanup,
-  createEffect,
   useContext,
   type Accessor,
   type ParentComponent,
-  Show,
-  untrack,
-  on,
-  batch,
-  createMemo,
-  type Setter,
 } from 'solid-js';
-import { makeTimer, type TimeoutSource } from '@solid-primitives/timer';
-import { createElementBounds, type NullableBounds } from '@solid-primitives/bounds';
-import { createScrollPosition, type Position } from '@solid-primitives/scroll';
+import { makeTimer } from '@solid-primitives/timer';
+import { createElementBounds } from '@solid-primitives/bounds';
+import { createScrollPosition } from '@solid-primitives/scroll';
+import { makeEventListener } from '@solid-primitives/event-listener';
 import {
-  DocumentEventListener,
-  makeEventListener,
-  WindowEventListener,
-  type E,
-} from '@solid-primitives/event-listener';
+  findClosest,
+  getActiveElement,
+  isTextEditable,
+  nearestFocusableAncestor,
+  queryFocusableChildren,
+} from './util/dom';
+import { createPreviousMemo } from './util/signals';
 
-function isTextEditable(el: Element): el is HTMLTextAreaElement | HTMLInputElement {
-  if (el instanceof HTMLTextAreaElement) return true;
-  if (!(el instanceof HTMLInputElement)) return false;
-  return ['text', 'password', 'email', 'number', 'search', 'tel', 'url'].includes(el.type);
-}
-
-function createPreviousMemo<T>(get: Accessor<T>) {
-  let currValue: T | undefined = undefined;
-  const [prev, setPrev] = createSignal<T | undefined>();
-  createEffect(() => {
-    const nextValue = currValue;
-    setPrev(() => nextValue);
-    currValue = get();
-  });
-  return [prev, setPrev] as const;
-}
-
-// TODO: probably remove context and just use a component.
-const FocusContext = createContext<{
-  focusedElement: Accessor<Element | null>;
-  focusableParent: Accessor<Element | null>;
-  focusableSiblings: Accessor<Element[]>;
-  focusableChildren: Accessor<Element[]>;
-}>({
-  focusedElement: createSignal(null)[0],
-  focusableParent: createSignal(null)[0],
-  focusableSiblings: createSignal([])[0],
-  focusableChildren: createSignal([])[0],
-});
-
-const focusableElementsSelector = [
-  'a[href]:not([tabindex="-1"])',
-  'button:not([disabled]):not([tabindex="-1"])',
-  'input:not([disabled]):not([tabindex="-1"])',
-  'textarea:not([disabled]):not([tabindex="-1"])',
-  'select:not([disabled]):not([tabindex="-1"])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ');
-
-function getActiveElement() {
-  return document.activeElement === document.body ? null : document.activeElement;
-}
+// TODO: decide what would be useful to expose via context
+const FocusContext = createContext<{}>({});
 
 // if focusing from nothing:
 // - set size/position immediately
@@ -111,11 +69,11 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
 
   const [previousFocusedElement, overrideSetPreviousFocusedElement] = createPreviousMemo(focusedElement);
 
+  // after the focus has settled, set `previousFocusedElement` to the current focused element
   createEffect(() => {
     const el = focusedElement(); // run this effect when focusedElement changes
     makeTimer(
       () => {
-        console.log('timer', el);
         overrideSetPreviousFocusedElement(el);
       },
       opacityTransitionDuration,
@@ -124,23 +82,23 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
   });
 
   createEffect(() => {
-    const el = focusRing();
-    if (!el) return;
-    const current = focusedElement();
+    const ring = focusRing();
+    if (!ring) return;
 
-    if (!current) {
-      el.style.opacity = '0';
+    const focus = focusedElement();
+    if (!focus) {
+      ring.style.opacity = '0';
       return;
     }
 
-    el.style.opacity = '1';
-    el.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
-    el.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
-    el.style.height = `${focusedRect.height ?? 0}px`;
-    el.style.width = `${focusedRect.width ?? 0}px`;
+    ring.style.opacity = '1';
+    ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
+    ring.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
+    ring.style.height = `${focusedRect.height ?? 0}px`;
+    ring.style.width = `${focusedRect.width ?? 0}px`;
 
     const previous = previousFocusedElement();
-    el.style.transition = previous
+    ring.style.transition = previous
       ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 150ms, height 150ms, width 150ms`
       : `opacity ${opacityTransitionDuration}ms`;
   });
@@ -271,14 +229,7 @@ export const FocusManager: ParentComponent = (props) => {
   });
 
   return (
-    <FocusContext.Provider
-      value={{
-        focusedElement,
-        focusableParent,
-        focusableSiblings,
-        focusableChildren,
-      }}
-    >
+    <FocusContext.Provider value={{}}>
       <div class="relative">
         {props.children}
         <div
@@ -297,80 +248,3 @@ export const FocusManager: ParentComponent = (props) => {
 };
 
 export const useFocus = useContext(FocusContext);
-
-function isChildOfFocusable(root: Element, element: Element) {
-  let parent = element.parentElement;
-  while (parent && parent !== root) {
-    if (parent.matches(focusableElementsSelector)) {
-      return true;
-    }
-    parent = parent.parentElement;
-  }
-  return false;
-}
-
-function queryFocusableChildren(root: Element | null) {
-  if (!root) return [];
-  const allFocusableElements = root.querySelectorAll(focusableElementsSelector);
-  return Array.from(allFocusableElements).filter((element) => !isChildOfFocusable(root, element));
-}
-
-function nearestFocusableAncestor(el: Element | null) {
-  if (!el) return document.body;
-  let parent = el.parentElement;
-  while (parent) {
-    if (parent.matches(focusableElementsSelector)) {
-      return parent;
-    }
-    parent = parent.parentElement;
-  }
-  return document.body;
-}
-
-function findClosest(
-  rect: DOMRect,
-  elements: { el: Element; rect: DOMRect }[],
-  direction: 'up' | 'down' | 'left' | 'right',
-) {
-  const distanceCalculators = {
-    up: (candidate: { rect: DOMRect }) => ({
-      xDistance: Math.abs(rect.left - (candidate.rect.left + candidate.rect.width / 2)),
-      yDistance: Math.abs(rect.top - candidate.rect.bottom),
-    }),
-    down: (candidate: { rect: DOMRect }) => ({
-      xDistance: Math.abs(rect.left - (candidate.rect.left + candidate.rect.width / 2)),
-      yDistance: Math.abs(rect.bottom - candidate.rect.top),
-    }),
-    left: (candidate: { rect: DOMRect }) => {
-      const rectMidpointY = (rect.bottom + rect.top) / 2;
-      const candidateMidpointY = (candidate.rect.bottom + candidate.rect.top) / 2;
-      return {
-        xDistance: Math.abs(rect.left - candidate.rect.right),
-        yDistance: Math.abs(rectMidpointY - candidateMidpointY),
-      };
-    },
-    right: (candidate: { rect: DOMRect }) => {
-      const rectMidpointY = (rect.bottom + rect.top) / 2;
-      const candidateMidpointY = (candidate.rect.bottom + candidate.rect.top) / 2;
-      return {
-        xDistance: Math.abs(rect.right - candidate.rect.left),
-        yDistance: Math.abs(rectMidpointY - candidateMidpointY),
-      };
-    },
-  };
-
-  const calculateDistance = distanceCalculators[direction];
-
-  return elements
-    .filter((input): input is { el: HTMLElement; rect: DOMRect } => {
-      return input.el instanceof HTMLElement;
-    })
-    .map((candidate) => ({
-      ...calculateDistance(candidate),
-      el: candidate.el,
-    }))
-    .sort((a, b) => {
-      const yDiff = a.yDistance - b.yDistance;
-      return yDiff === 0 ? a.xDistance - b.xDistance : yDiff;
-    })[0]?.el;
-}

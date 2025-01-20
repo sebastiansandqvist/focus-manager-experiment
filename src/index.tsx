@@ -8,6 +8,12 @@ const App: Component = () => {
   return (
     <FocusManager>
       <div class="gap-8 p-8 grid">
+        <div class="gap-4 grid grid-cols-4">
+          <button>1</button>
+          <button>2</button>
+          <button>3</button>
+          <button>4</button>
+        </div>
         <div class="gap-4 grid grid-cols-3">
           <button>1</button>
           <button>2</button>
