@@ -10,14 +10,15 @@ import {
   untrack,
   on,
   batch,
+  createMemo,
+  type Setter,
 } from 'solid-js';
-import { focus, createActiveElement, makeActiveElementListener } from '@solid-primitives/active-element';
-import { createElementBounds } from '@solid-primitives/bounds';
-import { createScrollPosition } from '@solid-primitives/scroll';
+import { makeTimer, type TimeoutSource } from '@solid-primitives/timer';
+import { createElementBounds, type NullableBounds } from '@solid-primitives/bounds';
+import { createScrollPosition, type Position } from '@solid-primitives/scroll';
 import { DocumentEventListener, makeEventListener, WindowEventListener } from '@solid-primitives/event-listener';
-import { createHydratableSignal } from '@solid-primitives/utils';
 
-function createPreviousMemo<T>(get: Accessor<T>): Accessor<T | undefined> {
+function createPreviousMemo<T>(get: Accessor<T>) {
   let currValue: T | undefined = undefined;
   const [prev, setPrev] = createSignal<T | undefined>();
   createEffect(() => {
@@ -25,9 +26,10 @@ function createPreviousMemo<T>(get: Accessor<T>): Accessor<T | undefined> {
     setPrev(() => nextValue);
     currValue = get();
   });
-  return prev;
+  return [prev, setPrev] as const;
 }
 
+// TODO: probably remove context and just use a component.
 const FocusContext = createContext<{
   focusedElement: Accessor<Element | null>;
   focusableParent: Accessor<Element | null>;
@@ -49,33 +51,106 @@ const focusableElementsSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export const FocusManager: ParentComponent = (props) => {
+function getActiveElement() {
+  return document.activeElement === document.body ? null : document.activeElement;
+}
+
+// if focusing from nothing:
+// - set size/position immediately
+// - transition opacity to 1
+// - then set transition property to all
+
+// if focusing from other focused element:
+// - default behaviors
+
+// if losing focus:
+// - maintain prior size/position
+// - transition opacity to 0
+
+function createFocusedElement() {
+  const [focusedElement, setFocusedElement] = createSignal(getActiveElement());
+
+  let timeout: number | undefined = undefined;
+
+  makeEventListener(document, 'focusin', () => {
+    clearTimeout(timeout);
+    setFocusedElement(getActiveElement());
+  });
+
+  makeEventListener(document, 'focusout', () => {
+    timeout = setTimeout(() => {
+      setFocusedElement(null);
+    }, 0);
+  });
+
+  onCleanup(() => clearTimeout(timeout));
+
+  return focusedElement;
+}
+
+function createFocusRingManager(focusedElement: Accessor<Element | null>) {
   const [focusRing, setFocusRing] = createSignal<HTMLDivElement>();
-  const focusedElement = createActiveElement();
+  const focusedRect = createElementBounds(focusedElement);
+  const scroll = createScrollPosition();
+  const focusedElementStyle = createMemo(() => {
+    const el = focusedElement();
+    if (el) return getComputedStyle(el);
+  });
+
+  const [previousFocusedElement, overrideSetPreviousFocusedElement] = createPreviousMemo(focusedElement);
+  createEffect(() => {
+    console.log('prev', previousFocusedElement());
+  });
+
+  const transitionDuration = 300;
+
+  createEffect(() => {
+    const el = focusedElement(); // run this effect when focusedElement changes
+    makeTimer(
+      () => {
+        console.log('timer', el);
+        overrideSetPreviousFocusedElement(el);
+      },
+      transitionDuration,
+      setTimeout,
+    );
+  });
+
+  createEffect(() => {
+    const el = focusRing();
+    if (!el) return;
+    const current = focusedElement();
+
+    if (!current) {
+      el.style.opacity = '0';
+      return;
+    }
+
+    el.style.opacity = '1';
+    el.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
+    el.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
+    el.style.height = `${focusedRect.height ?? 0}px`;
+    el.style.width = `${focusedRect.width ?? 0}px`;
+
+    const previous = previousFocusedElement();
+    el.style.transition = previous
+      ? `border-radius 150ms, opacity ${transitionDuration}ms, transform 150ms, height 150ms, width 150ms`
+      : `opacity ${transitionDuration}ms`;
+  });
+
+  return setFocusRing;
+}
+
+export const FocusManager: ParentComponent = (props) => {
+  const focusedElement = createFocusedElement();
   const focusableParent = () => nearestFocusableAncestor(focusedElement());
   const focusableSiblings = () => queryFocusableChildren(focusableParent());
   const focusableChildren = () => queryFocusableChildren(focusedElement());
-
-  const focusedRect = createElementBounds(focusedElement);
-  const scroll = createScrollPosition();
-  const focusedElementStyle = () => {
-    const el = focusedElement();
-    if (el) return getComputedStyle(el);
-  };
-
-  // const previousFocusedElement = createPreviousMemo(focusedElement);
+  const setFocusRing = createFocusRingManager(focusedElement);
 
   createEffect(() => {
     console.log('focused', focusedElement());
   });
-  // createEffect(() => {
-  //   console.log('prev', previousFocusedElement());
-  // });
-
-  // TODO: only fade in when there was no previously focused element
-  // makeEventListener(document, 'focusin', (e) => {
-  //   e.target;
-  // });
 
   makeEventListener(window, 'keydown', (e) => {
     if (e.key === 'Enter') {
@@ -111,19 +186,10 @@ export const FocusManager: ParentComponent = (props) => {
           ref={setFocusRing}
           aria-hidden="true"
           role="presentation"
-          class="top-0 left-0 pointer-events-none absolute z-10 border border-solid border-sky-400"
-          classList={{
-            'opacity-0': !focusedElement(),
-          }}
+          class="top-0 left-0 pointer-events-none absolute z-10 outline outline-2 outline-offset-2 outline-sky-400"
           style={{
-            'border-radius': focusedElementStyle()?.borderRadius,
-            'height': `${focusedRect.height ?? 0}px`,
-            'width': `${focusedRect.width ?? 0}px`,
-            'transform': `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`,
-            'transition': true
-              ? `border-radius 0.1s, opacity 0.3s, transform 1s, width 0.1s, height 0.1s`
-              : `opacity 0.3s`,
             'will-change': 'border-radius, opacity, transform, width, height',
+            'transition': 'opacity 300ms',
           }}
         />
       </div>
