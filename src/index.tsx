@@ -17,16 +17,6 @@ const App: Component = () => {
           <input type="text" />
           <input type="text" />
         </div>
-        <section tabIndex={0} class="border">
-          <h2>a focusable section</h2>
-          <button>1</button>
-          <button>2</button>
-          <p>hi</p>
-          <input type="text" />
-        </section>
-        <div>
-          <button>1</button>
-        </div>
         <div class="gap-4 grid grid-cols-2">
           <section tabIndex={0} class="border">
             <h2>a focusable section</h2>
@@ -49,6 +39,16 @@ const App: Component = () => {
               <input type="text" />
             </section>
           </section>
+        </div>
+        <section tabIndex={0} class="border">
+          <h2>a focusable section</h2>
+          <button>1</button>
+          <button>2</button>
+          <p>hi</p>
+          <input type="text" />
+        </section>
+        <div>
+          <button>1</button>
         </div>
       </div>
     </FocusManager>

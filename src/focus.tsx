@@ -7,70 +7,26 @@ import {
   type Accessor,
   type ParentComponent,
   Show,
+  untrack,
+  on,
+  batch,
 } from 'solid-js';
-import { focus, createActiveElement } from '@solid-primitives/active-element';
+import { focus, createActiveElement, makeActiveElementListener } from '@solid-primitives/active-element';
 import { createElementBounds } from '@solid-primitives/bounds';
 import { createScrollPosition } from '@solid-primitives/scroll';
+import { DocumentEventListener, makeEventListener, WindowEventListener } from '@solid-primitives/event-listener';
+import { createHydratableSignal } from '@solid-primitives/utils';
 
-// maybe instead of storing the whole tree, store just the:
-// - focused element
-// - its focusable children
-// - its focusable parent
-
-/*
-type FocusTree =
-  | {
-      id: 'root';
-      rect: {
-        top: number;
-        left: number;
-        width: number;
-        height: number;
-      };
-      parent?: undefined;
-      children: FocusTree[];
-      focus: () => void;
-      element: HTMLElement;
-    }
-  | {
-      id: string;
-      rect: {
-        top: number;
-        left: number;
-        width: number;
-        height: number;
-      };
-      parent: FocusTree;
-      children: FocusTree[];
-      focus: () => void;
-      element: HTMLElement;
-    };
-
-const FocusContext = createContext<{
-  tree: FocusTree;
-}>({
-  tree: {
-    id: 'root',
-    rect: document.body.getBoundingClientRect(), // should probably be a signal
-    children: [],
-    focus: () => {},
-    element: document.body,
-  },
-});
-
-// intended to be used like `ref={focusable}`
-function focusable(el: Element) {
-  // register into tree
-
-  onCleanup(() => {
-    // remove from tree
+function createPreviousMemo<T>(get: Accessor<T>): Accessor<T | undefined> {
+  let currValue: T | undefined = undefined;
+  const [prev, setPrev] = createSignal<T | undefined>();
+  createEffect(() => {
+    const nextValue = currValue;
+    setPrev(() => nextValue);
+    currValue = get();
   });
+  return prev;
 }
-
-const [isFocused, setIsFocused] = createSignal(false)
-<div use:focus={setIsFocused}></div>
-
-*/
 
 const FocusContext = createContext<{
   focusedElement: Accessor<Element | null>;
@@ -102,22 +58,43 @@ export const FocusManager: ParentComponent = (props) => {
 
   const focusedRect = createElementBounds(focusedElement);
   const scroll = createScrollPosition();
+  const focusedElementStyle = () => {
+    const el = focusedElement();
+    if (el) return getComputedStyle(el);
+  };
+
+  // const previousFocusedElement = createPreviousMemo(focusedElement);
 
   createEffect(() => {
-    if (!focusedRect) return;
-    console.log({
-      bottom: focusedRect.bottom,
-      left: focusedRect.left,
-      right: focusedRect.right,
-      top: focusedRect.top,
-      height: focusedRect.height,
-      width: focusedRect.width,
-    });
+    console.log('focused', focusedElement());
   });
-  // const controller = new AbortController();
-  // onCleanup(() => {
-  //   controller.abort();
+  // createEffect(() => {
+  //   console.log('prev', previousFocusedElement());
   // });
+
+  // TODO: only fade in when there was no previously focused element
+  // makeEventListener(document, 'focusin', (e) => {
+  //   e.target;
+  // });
+
+  makeEventListener(window, 'keydown', (e) => {
+    if (e.key === 'Enter') {
+      const child = focusableChildren()[0];
+      if (child instanceof HTMLElement) {
+        child.focus();
+        e.preventDefault();
+      }
+    }
+
+    if (e.key === 'Escape') {
+      const parent = focusableParent();
+      parent.focus();
+      e.preventDefault();
+    }
+
+    // TODO: traversal stuff
+    // if (e.key === 'Down') { }
+  });
 
   return (
     <FocusContext.Provider
@@ -130,52 +107,29 @@ export const FocusManager: ParentComponent = (props) => {
     >
       <div class="relative">
         {props.children}
-        {/* transition:
-        border-radius 0.1s,
-        opacity 0.3s,
-        transform 0.1s,
-        width 0.1s,
-        height 0.1s;
-      will-change: border-radius, opacity, transform, width, height; */}
-        <Show when={focusedRect} keyed>
-          {(rect) => (
-            <div
-              ref={setFocusRing}
-              aria-hidden="true"
-              role="presentation"
-              class="top-0 left-0 pointer-events-none absolute z-10 border border-solid border-sky-400"
-              classList={{
-                'opacity-0': !focusedElement(),
-              }}
-              style={{
-                height: `${rect.height ?? 0}px`,
-                width: `${rect.width ?? 0}px`,
-                transform: `translate(${(rect.left ?? 0) + scroll.x}px, ${(rect.top ?? 0) + scroll.y}px)`,
-              }}
-            />
-          )}
-        </Show>
+        <div
+          ref={setFocusRing}
+          aria-hidden="true"
+          role="presentation"
+          class="top-0 left-0 pointer-events-none absolute z-10 border border-solid border-sky-400"
+          classList={{
+            'opacity-0': !focusedElement(),
+          }}
+          style={{
+            'border-radius': focusedElementStyle()?.borderRadius,
+            'height': `${focusedRect.height ?? 0}px`,
+            'width': `${focusedRect.width ?? 0}px`,
+            'transform': `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`,
+            'transition': true
+              ? `border-radius 0.1s, opacity 0.3s, transform 1s, width 0.1s, height 0.1s`
+              : `opacity 0.3s`,
+            'will-change': 'border-radius, opacity, transform, width, height',
+          }}
+        />
       </div>
     </FocusContext.Provider>
   );
 };
-/*
-  const appPadding = 20;
-  const borderPx = 2;
-  const rect = target.getBoundingClientRect();
-  const scrollX = window.scrollX || window.pageXOffset;
-  const scrollY = window.scrollY || window.pageYOffset;
-  const translateX = rect.left + scrollX - appPadding - borderPx;
-  const translateY = rect.top + scrollY - appPadding - borderPx;
-  const computedStyle = window.getComputedStyle(target);
-  const borderRadius = parseFloat(computedStyle.borderRadius) || 0;
-  const adjustedRadius = borderRadius + borderPx; // increase radius to account for focus ring
-  focusRing.style.width = `${rect.width}px`;
-  focusRing.style.height = `${rect.height}px`;
-  focusRing.style.transform = `translate(${translateX}px, ${translateY}px)`;
-  focusRing.style.opacity = '1';
-  focusRing.style.borderRadius = `${adjustedRadius}px`;
-*/
 
 export const useFocus = useContext(FocusContext);
 
