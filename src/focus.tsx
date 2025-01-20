@@ -16,7 +16,18 @@ import {
 import { makeTimer, type TimeoutSource } from '@solid-primitives/timer';
 import { createElementBounds, type NullableBounds } from '@solid-primitives/bounds';
 import { createScrollPosition, type Position } from '@solid-primitives/scroll';
-import { DocumentEventListener, makeEventListener, WindowEventListener } from '@solid-primitives/event-listener';
+import {
+  DocumentEventListener,
+  makeEventListener,
+  WindowEventListener,
+  type E,
+} from '@solid-primitives/event-listener';
+
+function isTextEditable(el: Element): el is HTMLTextAreaElement | HTMLInputElement {
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (!(el instanceof HTMLInputElement)) return false;
+  return ['text', 'password', 'email', 'number', 'search', 'tel', 'url'].includes(el.type);
+}
 
 function createPreviousMemo<T>(get: Accessor<T>) {
   let currValue: T | undefined = undefined;
@@ -66,6 +77,7 @@ function getActiveElement() {
 // if losing focus:
 // - maintain prior size/position
 // - transition opacity to 0
+const opacityTransitionDuration = 300;
 
 function createFocusedElement() {
   const [focusedElement, setFocusedElement] = createSignal(getActiveElement());
@@ -98,11 +110,6 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
   });
 
   const [previousFocusedElement, overrideSetPreviousFocusedElement] = createPreviousMemo(focusedElement);
-  createEffect(() => {
-    console.log('prev', previousFocusedElement());
-  });
-
-  const transitionDuration = 300;
 
   createEffect(() => {
     const el = focusedElement(); // run this effect when focusedElement changes
@@ -111,7 +118,7 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
         console.log('timer', el);
         overrideSetPreviousFocusedElement(el);
       },
-      transitionDuration,
+      opacityTransitionDuration,
       setTimeout,
     );
   });
@@ -134,11 +141,115 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
 
     const previous = previousFocusedElement();
     el.style.transition = previous
-      ? `border-radius 150ms, opacity ${transitionDuration}ms, transform 150ms, height 150ms, width 150ms`
-      : `opacity ${transitionDuration}ms`;
+      ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 150ms, height 150ms, width 150ms`
+      : `opacity ${opacityTransitionDuration}ms`;
   });
 
   return setFocusRing;
+}
+
+function createKeyboardFocusHandler({
+  focusedElement,
+  focusableParent,
+  focusableSiblings,
+  focusableChildren,
+}: {
+  focusedElement: Accessor<Element | null>;
+  focusableParent: Accessor<HTMLElement>;
+  focusableSiblings: Accessor<Element[]>;
+  focusableChildren: Accessor<Element[]>;
+}) {
+  makeEventListener(window, 'keydown', (e) => {
+    const traverseIn = () => {
+      const child = focusableChildren()[0];
+      if (child instanceof HTMLElement) {
+        child.focus();
+        e.preventDefault();
+      }
+    };
+
+    const traverseOut = () => {
+      const parent = focusableParent();
+      parent.focus();
+      e.preventDefault();
+    };
+
+    if (e.key === 'Enter') return traverseIn();
+    if (e.key === 'Escape') return traverseOut();
+
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (!arrowKeys.includes(e.key)) return;
+
+    const target = focusedElement();
+    if (!target) return; // TODO: consider removing this condition
+
+    const focusedRect = target.getBoundingClientRect();
+
+    const candidates = focusableSiblings()
+      .filter((candidate) => candidate !== target)
+      .map((el) => ({
+        el,
+        rect: el.getBoundingClientRect(),
+      }));
+
+    if (e.key === 'ArrowUp') {
+      const upCandidates = candidates.filter(({ rect }) => rect.bottom <= focusedRect.top);
+      const closest = findClosest(focusedRect, upCandidates, 'up');
+      if (closest) {
+        closest.focus();
+        e.preventDefault();
+      } else {
+        traverseOut();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      const downCandidates = candidates.filter(({ rect }) => rect.top >= focusedRect.bottom);
+      const closest = findClosest(focusedRect, downCandidates, 'down');
+      if (closest) {
+        closest.focus();
+        e.preventDefault();
+      } else {
+        traverseOut();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+      // don't override default input arrow key behavior unless the cursor is at the beginning
+      if (isTextEditable(target)) {
+        const cursorPosition = target.selectionStart;
+        if (cursorPosition !== 0) return;
+      }
+      const leftCandidates = candidates.filter(({ rect }) => rect.right <= focusedRect.left);
+      const closest = findClosest(focusedRect, leftCandidates, 'left');
+      if (closest && 'focus' in closest) {
+        closest.focus();
+        e.preventDefault();
+      } else {
+        traverseOut();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowRight') {
+      // don't override default input arrow key behavior unless the cursor is at the end
+      if (isTextEditable(target)) {
+        const cursorPosition = target.selectionEnd;
+        if (cursorPosition !== target.value.length) return;
+      }
+      const rightCandidates = candidates.filter(({ rect }) => rect.left >= focusedRect.right);
+      const closest = findClosest(focusedRect, rightCandidates, 'right');
+      if (closest && 'focus' in closest) {
+        closest.focus();
+        e.preventDefault();
+      } else {
+        traverseOut();
+      }
+      return;
+    }
+  });
 }
 
 export const FocusManager: ParentComponent = (props) => {
@@ -148,27 +259,15 @@ export const FocusManager: ParentComponent = (props) => {
   const focusableChildren = () => queryFocusableChildren(focusedElement());
   const setFocusRing = createFocusRingManager(focusedElement);
 
-  createEffect(() => {
-    console.log('focused', focusedElement());
+  createKeyboardFocusHandler({
+    focusedElement,
+    focusableParent,
+    focusableSiblings,
+    focusableChildren,
   });
 
-  makeEventListener(window, 'keydown', (e) => {
-    if (e.key === 'Enter') {
-      const child = focusableChildren()[0];
-      if (child instanceof HTMLElement) {
-        child.focus();
-        e.preventDefault();
-      }
-    }
-
-    if (e.key === 'Escape') {
-      const parent = focusableParent();
-      parent.focus();
-      e.preventDefault();
-    }
-
-    // TODO: traversal stuff
-    // if (e.key === 'Down') { }
+  createEffect(() => {
+    console.log('focused', focusedElement());
   });
 
   return (
@@ -188,8 +287,8 @@ export const FocusManager: ParentComponent = (props) => {
           role="presentation"
           class="top-0 left-0 pointer-events-none absolute z-10 outline outline-2 outline-offset-2 outline-sky-400"
           style={{
+            'transition': `opacity ${opacityTransitionDuration}ms`,
             'will-change': 'border-radius, opacity, transform, width, height',
-            'transition': 'opacity 300ms',
           }}
         />
       </div>
@@ -226,4 +325,52 @@ function nearestFocusableAncestor(el: Element | null) {
     parent = parent.parentElement;
   }
   return document.body;
+}
+
+function findClosest(
+  rect: DOMRect,
+  elements: { el: Element; rect: DOMRect }[],
+  direction: 'up' | 'down' | 'left' | 'right',
+) {
+  const distanceCalculators = {
+    up: (candidate: { rect: DOMRect }) => ({
+      xDistance: Math.abs(rect.left - (candidate.rect.left + candidate.rect.width / 2)),
+      yDistance: Math.abs(rect.top - candidate.rect.bottom),
+    }),
+    down: (candidate: { rect: DOMRect }) => ({
+      xDistance: Math.abs(rect.left - (candidate.rect.left + candidate.rect.width / 2)),
+      yDistance: Math.abs(rect.bottom - candidate.rect.top),
+    }),
+    left: (candidate: { rect: DOMRect }) => {
+      const rectMidpointY = (rect.bottom + rect.top) / 2;
+      const candidateMidpointY = (candidate.rect.bottom + candidate.rect.top) / 2;
+      return {
+        xDistance: Math.abs(rect.left - candidate.rect.right),
+        yDistance: Math.abs(rectMidpointY - candidateMidpointY),
+      };
+    },
+    right: (candidate: { rect: DOMRect }) => {
+      const rectMidpointY = (rect.bottom + rect.top) / 2;
+      const candidateMidpointY = (candidate.rect.bottom + candidate.rect.top) / 2;
+      return {
+        xDistance: Math.abs(rect.right - candidate.rect.left),
+        yDistance: Math.abs(rectMidpointY - candidateMidpointY),
+      };
+    },
+  };
+
+  const calculateDistance = distanceCalculators[direction];
+
+  return elements
+    .filter((input): input is { el: HTMLElement; rect: DOMRect } => {
+      return input.el instanceof HTMLElement;
+    })
+    .map((candidate) => ({
+      ...calculateDistance(candidate),
+      el: candidate.el,
+    }))
+    .sort((a, b) => {
+      const yDiff = a.yDistance - b.yDistance;
+      return yDiff === 0 ? a.xDistance - b.xDistance : yDiff;
+    })[0]?.el;
 }
