@@ -15,7 +15,7 @@ import { focus, createActiveElement, makeActiveElementListener } from '@solid-pr
 import { createElementBounds } from '@solid-primitives/bounds';
 import { createScrollPosition } from '@solid-primitives/scroll';
 import { DocumentEventListener, makeEventListener, WindowEventListener } from '@solid-primitives/event-listener';
-import { createHydratableSignal } from '@solid-primitives/utils';
+import { createTimer } from '@solid-primitives/timer';
 
 function createPreviousMemo<T>(get: Accessor<T>): Accessor<T | undefined> {
   let currValue: T | undefined = undefined;
@@ -49,9 +49,14 @@ const focusableElementsSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
+function getActiveElement() {
+  return document.activeElement === document.body ? null : document.activeElement;
+}
+
 export const FocusManager: ParentComponent = (props) => {
   const [focusRing, setFocusRing] = createSignal<HTMLDivElement>();
-  const focusedElement = createActiveElement();
+  // const focusedElement = createActiveElement();
+  const [focusedElement, setFocusedElement] = createSignal<Element | null>(getActiveElement());
   const focusableParent = () => nearestFocusableAncestor(focusedElement());
   const focusableSiblings = () => queryFocusableChildren(focusableParent());
   const focusableChildren = () => queryFocusableChildren(focusedElement());
@@ -63,19 +68,38 @@ export const FocusManager: ParentComponent = (props) => {
     if (el) return getComputedStyle(el);
   };
 
-  // const previousFocusedElement = createPreviousMemo(focusedElement);
+  const previousFocusedElement = createPreviousMemo(focusedElement);
 
   createEffect(() => {
     console.log('focused', focusedElement());
   });
-  // createEffect(() => {
-  //   console.log('prev', previousFocusedElement());
-  // });
+  createEffect(() => {
+    console.log('prev', previousFocusedElement());
+  });
+
+  const [timerPaused, setTimerPaused] = createSignal(true);
+  createEffect(() => {
+    timerPaused();
+    createTimer(
+      () => {
+        console.log('setting null');
+        setFocusedElement(null);
+      },
+      () => !timerPaused() && 0,
+      setTimeout,
+    );
+  });
 
   // TODO: only fade in when there was no previously focused element
-  // makeEventListener(document, 'focusin', (e) => {
-  //   e.target;
-  // });
+  makeEventListener(document, 'focusin', (e) => {
+    setTimerPaused(true);
+    setFocusedElement(getActiveElement());
+  });
+
+  makeEventListener(document, 'focusout', (e) => {
+    setTimerPaused(false);
+    console.log('focusout');
+  });
 
   makeEventListener(window, 'keydown', (e) => {
     if (e.key === 'Enter') {
@@ -120,9 +144,10 @@ export const FocusManager: ParentComponent = (props) => {
             'height': `${focusedRect.height ?? 0}px`,
             'width': `${focusedRect.width ?? 0}px`,
             'transform': `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`,
-            'transition': true
-              ? `border-radius 0.1s, opacity 0.3s, transform 1s, width 0.1s, height 0.1s`
-              : `opacity 0.3s`,
+            'transition':
+              previousFocusedElement() && focusedElement()
+                ? `border-radius 0.1s, opacity 0.3s, transform 1s, width 0.1s, height 0.1s`
+                : `opacity 0.3s`,
             'will-change': 'border-radius, opacity, transform, width, height',
           }}
         />
