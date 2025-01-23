@@ -20,9 +20,16 @@ import {
   queryFocusableChildren,
 } from './util/dom';
 import { createPreviousMemo } from './util/signals';
+import { includes } from './util/helpers';
 
 // TODO: decide what would be useful to expose via context
-const FocusContext = createContext<{}>({});
+const FocusContext = createContext<{
+  focusedElement: Accessor<Element | null>;
+  enableFocusChaser: (willBeVisible: boolean) => void;
+}>({
+  focusedElement: () => null,
+  enableFocusChaser: () => {},
+});
 
 // if focusing from nothing:
 // - set size/position immediately
@@ -58,7 +65,7 @@ function createFocusedElement() {
   return focusedElement;
 }
 
-function createFocusRingManager(focusedElement: Accessor<Element | null>) {
+function createFocusRingManager(focusedElement: Accessor<Element | null>, isEnabled: Accessor<boolean>) {
   const [focusRing, setFocusRing] = createSignal<HTMLDivElement>();
   const focusedRect = createElementBounds(focusedElement);
   const scroll = createScrollPosition();
@@ -91,7 +98,7 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
       return;
     }
 
-    ring.style.opacity = '1';
+    ring.style.opacity = isEnabled() ? '1' : '0';
     ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
     ring.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
     ring.style.height = `${focusedRect.height ?? 0}px`;
@@ -135,8 +142,8 @@ function createKeyboardFocusHandler({
     if (e.key === 'Enter') return traverseIn();
     if (e.key === 'Escape') return traverseOut();
 
-    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-    if (!arrowKeys.includes(e.key)) return;
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const;
+    if (!includes(arrowKeys, e.key)) return;
 
     const target = focusedElement();
     if (!target) return; // TODO: consider removing this condition
@@ -214,8 +221,9 @@ export const FocusManager: ParentComponent = (props) => {
   const focusedElement = createFocusedElement();
   const focusableParent = () => nearestFocusableAncestor(focusedElement());
   const focusableSiblings = () => queryFocusableChildren(focusableParent());
-  const focusableChildren = () => queryFocusableChildren(focusedElement());
-  const setFocusRing = createFocusRingManager(focusedElement);
+  const focusableChildren = () => queryFocusableChildren(focusedElement() ?? document.body);
+  const [isEnabled, setIsEnabled] = createSignal(true);
+  const setFocusRing = createFocusRingManager(focusedElement, isEnabled);
 
   createKeyboardFocusHandler({
     focusedElement,
@@ -229,14 +237,19 @@ export const FocusManager: ParentComponent = (props) => {
   });
 
   return (
-    <FocusContext.Provider value={{}}>
+    <FocusContext.Provider
+      value={{
+        focusedElement,
+        enableFocusChaser: setIsEnabled,
+      }}
+    >
       <div class="relative">
         {props.children}
         <div
           ref={setFocusRing}
           aria-hidden="true"
           role="presentation"
-          class="top-0 left-0 pointer-events-none absolute z-10 outline outline-2 outline-offset-2 outline-sky-400"
+          class="pointer-events-none absolute top-0 left-0 z-10 outline-2 outline-offset-2 outline-sky-400"
           style={{
             'transition': `opacity ${opacityTransitionDuration}ms`,
             'will-change': 'border-radius, opacity, transform, width, height',
@@ -247,4 +260,4 @@ export const FocusManager: ParentComponent = (props) => {
   );
 };
 
-export const useFocus = useContext(FocusContext);
+export const useFocus = () => useContext(FocusContext);
