@@ -91,7 +91,7 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
       return;
     }
 
-    ring.style.opacity = '1';
+    ring.style.opacity = '0'; // TODO: 1
     ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
     ring.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
     ring.style.height = `${focusedRect.height ?? 0}px`;
@@ -236,7 +236,7 @@ export const FocusManager: ParentComponent = (props) => {
           ref={setFocusRing}
           aria-hidden="true"
           role="presentation"
-          class="top-0 left-0 pointer-events-none absolute z-10 outline outline-2 outline-offset-2 outline-sky-400"
+          class="pointer-events-none absolute top-0 left-0 z-10 outline-2 outline-offset-2 outline-sky-400"
           style={{
             'transition': `opacity ${opacityTransitionDuration}ms`,
             'will-change': 'border-radius, opacity, transform, width, height',
