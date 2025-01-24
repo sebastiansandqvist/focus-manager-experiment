@@ -1,44 +1,60 @@
 import { createSignal, type Component, For } from 'solid-js';
 import { Motion } from 'solid-motionone';
 
-// Simple helper to pick a stable "randomish" color for each item
 function colorForIndex(i: number) {
-  // e.g. offset the hue by i*35 for variety
   const hue = (i * 35) % 360;
   return `hsl(${hue}, 70%, 60%)`;
 }
 
 export const Coverflow: Component = () => {
   const items = Array.from({ length: 10 }, (_, i) => `Item ${i + 1}`);
-  const [activeIndex, setActiveIndex] = createSignal(5);
+  const [activeIndex, setActiveIndex] = createSignal(4);
+  const [hoverIndex, setHoverIndex] = createSignal<number | null>(null);
 
-  const cardWidth = 300;
+  // Card sizing
+  const cardWidth = 200;
   const cardHeight = 280;
 
-  const spacing = 320;
-  const anglePerStep = 40;
-  const maxRotation = 60;
+  // Tweak these to taste
+  const spacing = 220;
+  const anglePerStep = 5;
+  const maxRotation = 30;
   const scaleStep = 0.07;
   const minScale = 0.4;
 
-  function transformFor(index: number) {
-    const offset = index - activeIndex();
+  function transformFor(i: number) {
+    const offset = i - activeIndex();
     const absOffset = Math.abs(offset);
 
-    // Inward rotation
+    // Base rotation
     let rotateY = -offset * anglePerStep;
     if (rotateY > maxRotation) rotateY = maxRotation;
     if (rotateY < -maxRotation) rotateY = -maxRotation;
 
-    // Shrink further from center
+    // Base scale
     let scale = 1 - absOffset * scaleStep;
     if (scale < minScale) scale = minScale;
 
-    // Linear horizontal offset
+    // Base x shift
     const x = offset * spacing;
 
-    const zIndex = 1000 - absOffset;
-    return { x, rotateY, scale, zIndex };
+    // Distance-based opacity
+    let opacity = 1 - absOffset * 0.15;
+    if (opacity < 0.2) opacity = 0.2;
+
+    // zIndex so the center item is on top by default
+    let zIndex = 1000 - absOffset;
+
+    // If hovered, override some transforms:
+    if (hoverIndex() === i) {
+      scale *= 1.15; // small pop
+      opacity = 1; // fully opaque
+      zIndex = 2000; // ensure hovered item is on top
+      return { x, y: -20, rotateY, scale, opacity, zIndex };
+    }
+
+    // Otherwise, default transform
+    return { x, rotateY, scale, opacity, zIndex };
   }
 
   return (
@@ -46,7 +62,7 @@ export const Coverflow: Component = () => {
       class="relative h-screen w-screen overflow-hidden bg-black"
       style={{
         'perspective': '1200px',
-        'perspective-origin': '50% 60%', // can tweak to see if it looks more balanced
+        'perspective-origin': '50% 50%',
       }}
     >
       <Motion.div
@@ -60,21 +76,25 @@ export const Coverflow: Component = () => {
       >
         <For each={items}>
           {(item, i) => {
-            const color = colorForIndex(i());
+            const bg = colorForIndex(i());
             return (
               <Motion.button
-                class="absolute rounded-lg text-white shadow-xl"
+                class="absolute rounded-xl text-white shadow-xl"
                 style={{
                   'width': `${cardWidth}px`,
                   'height': `${cardHeight}px`,
                   'transform-origin': 'center center',
                   'backface-visibility': 'hidden',
-                  // Use the color & reflection
-                  'background-color': color,
-                  '-webkit-box-reflect': 'below 0px linear-gradient(transparent, rgba(0,0,0,0.2))',
+                  'background-color': bg,
+                  '-webkit-box-reflect': 'below 0 linear-gradient(transparent, rgba(0,0,0,0.2))',
                 }}
+                // Track hover enter/leave
+                onPointerEnter={() => setHoverIndex(i())}
+                onPointerLeave={() => setHoverIndex(null)}
+                // Animate transforms
                 animate={transformFor(i())}
-                transition={{ duration: 0.3, easing: 'ease-in-out' }}
+                // Snappy transitions
+                transition={{ duration: 0.2, easing: 'ease-in-out' }}
                 onClick={() => setActiveIndex(i())}
               >
                 {item}
