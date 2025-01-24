@@ -17,6 +17,10 @@ export function getActiveElement() {
   return document.activeElement === document.body ? null : document.activeElement;
 }
 
+// TODO:
+// 1. this needs to ignore off-screen items and
+// 2. have a max off-axis distance bound
+//      - maybe the other item needs some overlap with the focus target?
 export function findClosest(
   rect: DOMRect,
   elements: { el: Element; rect: DOMRect }[],

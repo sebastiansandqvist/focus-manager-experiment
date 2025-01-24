@@ -40,14 +40,14 @@ const Carousel: Component = () => {
     setActiveItem(null);
   });
 
-  createEffect(() => {
-    enableFocusChaser(!activeItem());
-  });
+  // createEffect(() => {
+  //   enableFocusChaser(!activeItem());
+  // });
 
   return (
     <div class="grid gap-2 bg-red-500/20">
       <h2 class="text-xl">recently played</h2>
-      <div ref={setContainer} class="scroll-snap-x flex gap-4 overflow-x-auto">
+      <div ref={setContainer} class="scroll-snap-x flex gap-4 overflow-x-hidden">
         <For each={carouselItems}>
           {(item) => (
             <a
