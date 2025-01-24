@@ -3,49 +3,37 @@ import { Motion } from 'solid-motionone';
 
 export const Coverflow: Component = () => {
   const items = Array.from({ length: 10 }, (_, i) => `Item ${i + 1}`);
-  const [activeIndex, setActiveIndex] = createSignal(5); // Start in the middle for demo
+  const [activeIndex, setActiveIndex] = createSignal(0);
 
-  const cardWidth = 200;
+  const cardWidth = 300;
   const cardHeight = 280;
 
-  // Tweak to taste
+  const spacing = 280;
   const anglePerStep = 10;
-  const maxRotation = 70;
+  const maxRotation = 60;
   const scaleStep = 0.07;
-  const spacing = 180;
+  const minScale = 0.4;
 
-  function transformFor(i: number) {
-    const offset = i - activeIndex();
+  function transformFor(index: number) {
+    const offset = index - activeIndex();
     const absOffset = Math.abs(offset);
 
-    // Invert rotation so left side angles toward center
     let rotateY = -offset * anglePerStep;
     if (rotateY > maxRotation) rotateY = maxRotation;
     if (rotateY < -maxRotation) rotateY = -maxRotation;
 
-    // Scale
     let scale = 1 - absOffset * scaleStep;
-    if (scale < 0.4) scale = 0.4;
+    if (scale < minScale) scale = minScale;
 
-    // X offset: factor scale if desired
-    const rotateYRad = (rotateY * Math.PI) / 180;
-    const x = offset * spacing * scale * Math.cos(rotateYRad);
-
-    // Align bottoms, center item on screen
-    const y = (1 - scale) * cardHeight;
+    const x = offset * spacing;
     const zIndex = 1000 - absOffset;
 
-    return {
-      x,
-      y: -y, // shift upward for stable baseline
-      rotateY,
-      scale,
-      zIndex,
-    };
+    return { x, rotateY, scale, zIndex };
   }
 
   return (
-    <div class="relative h-screen w-full overflow-hidden bg-black" style={{ perspective: '1200px' }}>
+    <div class="relative h-screen w-screen overflow-hidden bg-black" style={{ perspective: '1200px' }}>
+      {/* This “track” is absolutely positioned at the center of the screen */}
       <Motion.div
         class="absolute"
         style={{
@@ -53,16 +41,20 @@ export const Coverflow: Component = () => {
           'left': '50%',
           'transform-style': 'preserve-3d',
         }}
-        animate={{ x: '-50%', y: '-50%' }}
+        // Move this div so offset=0 is exactly at screen center
+        animate={{
+          x: '-50%',
+          y: '-50%',
+        }}
       >
         <For each={items}>
           {(item, i) => (
             <Motion.button
-              class="absolute rounded-xl bg-gray-700 text-white shadow-lg"
+              class="absolute rounded-lg bg-gray-700 text-white shadow-xl"
               style={{
                 'width': `${cardWidth}px`,
                 'height': `${cardHeight}px`,
-                'transform-origin': 'center bottom',
+                'transform-origin': 'center center',
                 'backface-visibility': 'hidden',
               }}
               animate={transformFor(i())}
