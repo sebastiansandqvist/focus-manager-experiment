@@ -2,13 +2,13 @@
 import { render } from 'solid-js/web';
 import type { Component } from 'solid-js';
 import { FocusManager } from './focus';
-import { Carousel } from './carousel';
+import { Coverflow } from './coverflow';
 import './main.css';
 
 const App: Component = () => {
   return (
     <FocusManager>
-      <Carousel />
+      <Coverflow />
       <div class="grid gap-8 p-8">
         <div class="grid grid-cols-4 gap-4">
           <button>1</button>
