@@ -6,20 +6,37 @@ function colorForIndex(i: number) {
   return `hsl(${hue}, 70%, 60%)`;
 }
 
+// new strategy instead of this:
+// - use activeIndex() to set the x offset of the track, which is transitioned smoothly
+// - use activeIndex() to set the rotation, opacity, and scale of each item.
+// - individual items somehow also need an additional x offset to account for their scale and rotation
+
+// additional considerations:
+// - when rotating, avoid x axis stretch
+// - avoid overlap if possible
+// - make the active item considerably bigger so we can add metadata below it
+// - if this is a list of recent games, having the oldest game visible to the left of the active item isn't ideal
+// - hover should scale centered vertically and horizontally, and cast a growing shadow, and make the reflection farther away
+// - either use some solid primitive for hover, or just use the motionone hover prop
+//   - interesting: https://primitives.solidjs.community/package/mouse#createpositiontoelement
+// - hover isn't super important since this is keyboard/gamepad driven. but nice to have.
+
 export const Coverflow: Component = () => {
   const items = Array.from({ length: 10 }, (_, i) => `Item ${i + 1}`);
-  const [activeIndex, setActiveIndex] = createSignal(4);
+  const [activeIndex, setActiveIndex] = createSignal(0);
   const [hoverIndex, setHoverIndex] = createSignal<number | null>(null);
 
   // Card sizing
-  const cardWidth = 200;
-  const cardHeight = 280;
+  const cardWidth = 300;
+  const cardHeight = 200;
+
+  const hoverScaleFactor = 1.15;
 
   // Tweak these to taste
-  const spacing = 220;
-  const anglePerStep = 5;
-  const maxRotation = 30;
-  const scaleStep = 0.07;
+  const spacing = 320;
+  const anglePerStep = 10;
+  const maxRotation = 40;
+  const scaleStep = 0.06;
   const minScale = 0.4;
 
   function transformFor(i: number) {
@@ -47,10 +64,10 @@ export const Coverflow: Component = () => {
 
     // If hovered, override some transforms:
     if (hoverIndex() === i) {
-      scale *= 1.15; // small pop
+      scale *= hoverScaleFactor; // small pop
       opacity = 1; // fully opaque
       zIndex = 2000; // ensure hovered item is on top
-      return { x, y: -20, rotateY, scale, opacity, zIndex };
+      return { x, y: 0, rotateY, scale, opacity, zIndex };
     }
 
     // Otherwise, default transform
@@ -59,20 +76,18 @@ export const Coverflow: Component = () => {
 
   return (
     <div
-      class="relative h-screen w-screen overflow-hidden bg-black"
+      class="relative h-80 w-screen overflow-x-hidden"
       style={{
         'perspective': '1200px',
         'perspective-origin': '50% 50%',
       }}
     >
       <Motion.div
-        class="absolute"
+        class="transform-3d"
         style={{
-          'top': '50%',
-          'left': '50%',
-          'transform-style': 'preserve-3d',
+          'padding-top': `${10 + cardHeight * hoverScaleFactor - cardHeight}px`,
+          'padding-left': `${cardWidth * hoverScaleFactor - cardWidth}px`,
         }}
-        animate={{ x: '-50%', y: '-50%' }}
       >
         <For each={items}>
           {(item, i) => {
@@ -86,16 +101,29 @@ export const Coverflow: Component = () => {
                   'transform-origin': 'center center',
                   'backface-visibility': 'hidden',
                   'background-color': bg,
-                  '-webkit-box-reflect': 'below 0 linear-gradient(transparent, rgba(0,0,0,0.2))',
+                  // instead of this, clone and mirror.
+                  // that way the reflection can be offset on hover.
+                  '-webkit-box-reflect': 'below 0 linear-gradient(transparent, transparent 50%, rgba(0,0,0,0.1) 100%)',
                 }}
+                hover={
+                  {
+                    // doesn't work with transition:
+                    // '-webkit-box-reflect': 'below 10px linear-gradient(transparent, transparent 50%, rgba(0,0,0,0.1) 100%)',
+                  }
+                }
                 // Track hover enter/leave
                 onPointerEnter={() => setHoverIndex(i())}
                 onPointerLeave={() => setHoverIndex(null)}
                 // Animate transforms
                 animate={transformFor(i())}
                 // Snappy transitions
-                transition={{ duration: 0.2, easing: 'ease-in-out' }}
-                onClick={() => setActiveIndex(i())}
+                transition={{
+                  duration: 0.4,
+                  // easing: [0.22, 1, 0.36, 1],
+                  // pop:
+                  easing: [0.34, 1.56, 0.64, 1], // cubic-bezier(0.34, 1.56, 0.64, 1)
+                }}
+                onFocus={() => setActiveIndex(i())}
               >
                 {item}
               </Motion.button>

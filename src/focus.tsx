@@ -21,6 +21,10 @@ import {
 } from './util/dom';
 import { createPreviousMemo } from './util/signals';
 
+// TODO:
+// maybe expose a way to steal focus on a stack and then release
+// focus control by popping off the stack
+
 // TODO: decide what would be useful to expose via context
 const FocusContext = createContext<{}>({});
 
@@ -91,7 +95,7 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
       return;
     }
 
-    ring.style.opacity = '0'; // TODO 1
+    ring.style.opacity = '1';
     ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
     ring.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
     ring.style.height = `${focusedRect.height ?? 0}px`;
