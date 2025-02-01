@@ -61,10 +61,62 @@ function createFocusedElement() {
 
 function createFocusRingManager(focusedElement: Accessor<Element | null>) {
   const [foo, setFoo] = createSignal(0);
-  const [running, start, stop] = createRAF(() => {
-    setFoo(Math.random());
-  });
+  const animatedCursorRect = {
+    left: 0,
+    top: 0,
+    width: 0,
+    height: 0,
+  };
+  let previousElement = null as {
+    element: Element;
+    rect: DOMRect;
+  } | null;
+
   const [focusRing, setFocusRing] = createSignal<HTMLDivElement>();
+  const [running, start, stop] = createRAF(() => {
+    // const focus
+    const activeElement = getActiveElement();
+    if (!activeElement) return;
+    const ring = focusRing();
+    if (!ring) return;
+
+    const focusedRect = activeElement.getBoundingClientRect();
+
+    if (previousElement) {
+      if (activeElement === previousElement.element) {
+        const topChange = focusedRect.top - previousElement.rect.top;
+        const leftChange = focusedRect.left - previousElement.rect.left;
+        const widthChange = focusedRect.width - previousElement.rect.width;
+        const heightChange = focusedRect.height - previousElement.rect.height;
+
+        animatedCursorRect.left += leftChange;
+        animatedCursorRect.top += topChange;
+        animatedCursorRect.width += widthChange;
+        animatedCursorRect.height += heightChange;
+      }
+    }
+
+    // animatedCursorRect.left = focusedRect.left;
+    const animationRatio = 0.2;
+    const leftDiff = focusedRect.left - animatedCursorRect.left;
+    animatedCursorRect.left += leftDiff * animationRatio;
+    const topDiff = focusedRect.top - animatedCursorRect.top;
+    animatedCursorRect.top += topDiff * animationRatio;
+    const widthDiff = focusedRect.width - animatedCursorRect.width;
+    animatedCursorRect.width += widthDiff * animationRatio;
+    const heightDiff = focusedRect.height - animatedCursorRect.height;
+    animatedCursorRect.height += heightDiff * animationRatio;
+
+    ring.style.transform = `translate(${(animatedCursorRect.left ?? 0) + scroll.x}px, ${(animatedCursorRect.top ?? 0) + scroll.y}px)`;
+    ring.style.height = `${animatedCursorRect.height ?? 0}px`;
+    ring.style.width = `${animatedCursorRect.width ?? 0}px`;
+    ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
+
+    previousElement = {
+      element: activeElement,
+      rect: structuredClone(focusedRect),
+    };
+  });
   const focusedRect = createElementBounds(focusedElement);
   const scroll = createScrollPosition();
   const focusedElementStyle = createMemo(() => {
@@ -88,30 +140,30 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
     );
   });
 
-  createEffect(() => {
-    foo();
-    const ring = focusRing();
-    if (!ring) return;
+  // createEffect(() => {
+  //   foo();
+  //   const ring = focusRing();
+  //   if (!ring) return;
 
-    const focus = focusedElement();
-    if (!focus) {
-      ring.style.opacity = '0';
-      return;
-    }
+  //   const focus = focusedElement();
+  //   if (!focus) {
+  //     ring.style.opacity = '0';
+  //     return;
+  //   }
 
-    const rect = focus.getBoundingClientRect();
+  //   const rect = focus.getBoundingClientRect();
 
-    ring.style.opacity = '1';
-    ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
-    ring.style.transform = `translate(${(rect.left ?? 0) + scroll.x}px, ${(rect.top ?? 0) + scroll.y}px)`;
-    ring.style.height = `${rect.height ?? 0}px`;
-    ring.style.width = `${rect.width ?? 0}px`;
+  //   ring.style.opacity = '1';
+  //   ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
+  //   ring.style.transform = `translate(${(rect.left ?? 0) + scroll.x}px, ${(rect.top ?? 0) + scroll.y}px)`;
+  //   ring.style.height = `${rect.height ?? 0}px`;
+  //   ring.style.width = `${rect.width ?? 0}px`;
 
-    const previous = previousFocusedElement();
-    ring.style.transition = previous
-      ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 0ms, height 0ms, width 0ms`
-      : `opacity ${opacityTransitionDuration}ms`;
-  });
+  //   const previous = previousFocusedElement();
+  //   ring.style.transition = previous
+  //     ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 0ms, height 0ms, width 0ms`
+  //     : `opacity ${opacityTransitionDuration}ms`;
+  // });
 
   return setFocusRing;
 }
