@@ -9,6 +9,19 @@ const App: Component = () => {
   return (
     <FocusManager>
       <Coverflow />
+      <div class="flex gap-2 overflow-x-scroll">
+        <div tabIndex={0} class="aspect-video h-36 bg-red-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-blue-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-green-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-yellow-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-purple-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-pink-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-indigo-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-orange-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-teal-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-cyan-500" />
+        <div tabIndex={0} class="aspect-video h-36 bg-lime-500" />
+      </div>
       <div class="grid gap-8 p-8">
         <div class="grid grid-cols-4 gap-4">
           <button>1</button>
