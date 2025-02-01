@@ -8,6 +8,7 @@ import {
   type Accessor,
   type ParentComponent,
 } from 'solid-js';
+import { createRAF } from '@solid-primitives/raf';
 import { makeTimer } from '@solid-primitives/timer';
 import { createElementBounds } from '@solid-primitives/bounds';
 import { createScrollPosition } from '@solid-primitives/scroll';
@@ -20,10 +21,6 @@ import {
   queryFocusableChildren,
 } from './util/dom';
 import { createPreviousMemo } from './util/signals';
-
-// TODO:
-// maybe expose a way to steal focus on a stack and then release
-// focus control by popping off the stack
 
 // TODO: decide what would be useful to expose via context
 const FocusContext = createContext<{}>({});
@@ -63,6 +60,10 @@ function createFocusedElement() {
 }
 
 function createFocusRingManager(focusedElement: Accessor<Element | null>) {
+  const [foo, setFoo] = createSignal(0);
+  const [running, start, stop] = createRAF(() => {
+    setFoo(Math.random());
+  });
   const [focusRing, setFocusRing] = createSignal<HTMLDivElement>();
   const focusedRect = createElementBounds(focusedElement);
   const scroll = createScrollPosition();
@@ -70,6 +71,8 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
     const el = focusedElement();
     if (el) return getComputedStyle(el);
   });
+
+  start();
 
   const [previousFocusedElement, overrideSetPreviousFocusedElement] = createPreviousMemo(focusedElement);
 
@@ -86,6 +89,7 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
   });
 
   createEffect(() => {
+    foo();
     const ring = focusRing();
     if (!ring) return;
 
@@ -95,15 +99,17 @@ function createFocusRingManager(focusedElement: Accessor<Element | null>) {
       return;
     }
 
+    const rect = focus.getBoundingClientRect();
+
     ring.style.opacity = '1';
     ring.style.borderRadius = focusedElementStyle()?.borderRadius ?? '';
-    ring.style.transform = `translate(${(focusedRect.left ?? 0) + scroll.x}px, ${(focusedRect.top ?? 0) + scroll.y}px)`;
-    ring.style.height = `${focusedRect.height ?? 0}px`;
-    ring.style.width = `${focusedRect.width ?? 0}px`;
+    ring.style.transform = `translate(${(rect.left ?? 0) + scroll.x}px, ${(rect.top ?? 0) + scroll.y}px)`;
+    ring.style.height = `${rect.height ?? 0}px`;
+    ring.style.width = `${rect.width ?? 0}px`;
 
     const previous = previousFocusedElement();
     ring.style.transition = previous
-      ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 150ms, height 150ms, width 150ms`
+      ? `border-radius 150ms, opacity ${opacityTransitionDuration}ms, transform 0ms, height 0ms, width 0ms`
       : `opacity ${opacityTransitionDuration}ms`;
   });
 
@@ -139,8 +145,9 @@ function createKeyboardFocusHandler({
     if (e.key === 'Enter') return traverseIn();
     if (e.key === 'Escape') return traverseOut();
 
-    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-    if (!arrowKeys.includes(e.key)) return;
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const;
+    // if (!includes(arrowKeys, e.key)) return;
+    if (!arrowKeys.some((key) => key === e.key)) return;
 
     const target = focusedElement();
     if (!target) return; // TODO: consider removing this condition
@@ -218,7 +225,7 @@ export const FocusManager: ParentComponent = (props) => {
   const focusedElement = createFocusedElement();
   const focusableParent = () => nearestFocusableAncestor(focusedElement());
   const focusableSiblings = () => queryFocusableChildren(focusableParent());
-  const focusableChildren = () => queryFocusableChildren(focusedElement());
+  const focusableChildren = () => queryFocusableChildren(focusedElement() ?? document.body);
   const setFocusRing = createFocusRingManager(focusedElement);
 
   createKeyboardFocusHandler({
